@@ -1,54 +1,79 @@
 package score
 
 import (
-	"log"
+	"fmt"
 	"math"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/ShareFrame/post-rating-service/models"
 )
 
-var weights = map[string]float64{
-	"watchTime":          MustEnvFloat("WEIGHT_WATCH_TIME"),
-	"rewatches":          MustEnvFloat("WEIGHT_REWATCHES"),
-	"shares":             MustEnvFloat("WEIGHT_SHARES"),
-	"comments":           MustEnvFloat("WEIGHT_COMMENTS"),
-	"likes":              MustEnvFloat("WEIGHT_LIKES"),
-	"saves":              MustEnvFloat("WEIGHT_SAVES"),
-	"engagementVelocity": MustEnvFloat("WEIGHT_ENGAGEMENT_VELOCITY"),
-	"locationRelevance":  MustEnvFloat("WEIGHT_LOCATION_RELEVANCE"),
-	"timeDecay":          MustEnvFloat("WEIGHT_TIME_DECAY"),
+var weights = make(map[string]float64)
+
+func InjectWeights(custom map[string]float64) {
+	weights = custom
 }
 
-func CalculateTrendingScore(p models.Post) float64 {
+func LoadWeightsFromEnv() {
+	keys := []string{
+		"WEIGHT_WATCH_TIME", "WEIGHT_REWATCHES", "WEIGHT_SHARES", "WEIGHT_COMMENTS",
+		"WEIGHT_LIKES", "WEIGHT_SAVES", "WEIGHT_ENGAGEMENT_VELOCITY", "WEIGHT_LOCATION_RELEVANCE",
+		"WEIGHT_TIME_DECAY", "MEDIA_OVERLOAD_UNIT_PENALTY", "BASELINE_SCORE",
+	}
+
+	for _, key := range keys {
+		weights[key] = mustEnvFloat(key)
+	}
+}
+
+func mustEnvFloat(key string) float64 {
+	v := os.Getenv(key)
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		panic(fmt.Sprintf("invalid float for %s: %v", key, err))
+	}
+	return f
+}
+
+func CalculateTrendingScore(p models.Post, now time.Time) float64 {
 	createdAt, err := time.Parse(time.RFC3339, p.CreatedAt)
 	if err != nil {
-		log.Printf("Invalid createdAt for post %s: %v", p.TID, err)
 		return 0
 	}
-	hoursSince := time.Since(createdAt).Hours()
+	hoursSince := now.Sub(createdAt).Hours()
 
-	baseScore := MustEnvFloat("BASELINE_SCORE")
-	score := baseScore
-
-	score += float64(SafeIntWithBaseline(p.WatchTime, 1)) * weights["watchTime"]
-	score += float64(SafeIntWithBaseline(p.Rewatches, 0)) * weights["rewatches"]
-	score += float64(SafeIntWithBaseline(p.Shares, 0)) * weights["shares"]
-	score += float64(SafeIntWithBaseline(p.Comments, 0)) * weights["comments"]
-	score += float64(SafeIntWithBaseline(p.Likes, 0)) * weights["likes"]
-	score += float64(SafeIntWithBaseline(p.Saves, 0)) * weights["saves"]
-	score += SafeFloat(p.EngagementVelocity) * weights["engagementVelocity"]
-	score -= weights["timeDecay"] * math.Log(1+hoursSince)
-	score += SafeFloat(p.LocationRelevance) * weights["locationRelevance"]
+	score := weights["BASELINE_SCORE"]
+	score += float64(safeInt(p.WatchTime, 1)) * weights["WEIGHT_WATCH_TIME"]
+	score += float64(safeInt(p.Rewatches, 0)) * weights["WEIGHT_REWATCHES"]
+	score += float64(safeInt(p.Shares, 0)) * weights["WEIGHT_SHARES"]
+	score += float64(safeInt(p.Comments, 0)) * weights["WEIGHT_COMMENTS"]
+	score += float64(safeInt(p.Likes, 0)) * weights["WEIGHT_LIKES"]
+	score += float64(safeInt(p.Saves, 0)) * weights["WEIGHT_SAVES"]
+	score += safeFloat(p.EngagementVelocity) * weights["WEIGHT_ENGAGEMENT_VELOCITY"]
+	score += safeFloat(p.LocationRelevance) * weights["WEIGHT_LOCATION_RELEVANCE"]
+	score -= weights["WEIGHT_TIME_DECAY"] * math.Log(1+hoursSince)
 
 	totalMedia := len(p.ImageURIs) + len(p.VideoURIs)
 	if totalMedia > 10 {
-		unitPenalty := MustEnvFloat("MEDIA_OVERLOAD_UNIT_PENALTY")
 		extra := totalMedia - 10
-		penalty := float64(extra) * unitPenalty
-		score -= penalty
-		log.Printf("Applied media overload penalty to post %s (media=%d, penalty=%.2f)", p.TID, totalMedia, penalty)
+		score -= float64(extra) * weights["MEDIA_OVERLOAD_UNIT_PENALTY"]
 	}
 
 	return math.Round(score*10) / 10
+}
+
+func safeInt(p *int, baseline int) int {
+	if p == nil {
+		return baseline
+	}
+	return *p
+}
+
+func safeFloat(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

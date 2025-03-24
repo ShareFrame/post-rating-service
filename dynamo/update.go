@@ -9,7 +9,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-func UpdateTrendingScore(client *dynamodb.Client, tableName, tid string, score float64) error {
+type DynamoDBUpdater interface {
+	UpdateItem(ctx context.Context, input *dynamodb.UpdateItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
+}
+
+func UpdateTrendingScore(client DynamoDBUpdater, tableName, tid string, score float64) error {
+
 	_, err := client.UpdateItem(context.TODO(), &dynamodb.UpdateItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]types.AttributeValue{

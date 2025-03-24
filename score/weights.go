@@ -1,7 +1,7 @@
 package score
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"strconv"
 )
@@ -10,7 +10,7 @@ func MustEnvFloat(key string) float64 {
 	v := os.Getenv(key)
 	f, err := strconv.ParseFloat(v, 64)
 	if err != nil {
-		log.Fatalf("invalid float for %s: %v", key, err)
+		panic(fmt.Sprintf("invalid float for %s: %v", key, err))
 	}
 	return f
 }

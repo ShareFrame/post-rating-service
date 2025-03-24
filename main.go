@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 
 	"github.com/ShareFrame/post-rating-service/dynamo"
 	"github.com/ShareFrame/post-rating-service/models"
@@ -50,7 +51,7 @@ func handler(ctx context.Context, event events.DynamoDBEvent) error {
 			continue
 		}
 
-		scoreValue := score.CalculateTrendingScore(post)
+		scoreValue := score.CalculateTrendingScore(post, time.Now())
 		log.Printf("Score for %s = %.2f", post.TID, scoreValue)
 
 		if err := dynamo.UpdateTrendingScore(client, tableName, post.TID, scoreValue); err != nil {
